@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"="width=device-width, initial-scale=1.0">
+    <title>Portfolio Architecture</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #000;
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow-x: hidden;
+            padding: 20px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 600px;
+            position: relative;
+        }
+
+        .loading {
+            text-align: center;
+            color: #fff;
+            font-size: 20px;
+            padding: 50px;
+        }
+
+        .book-container {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 30px;
+            position: relative;
+        }
+
+        .book {
+            position: relative;
+            width: 100%;
+            max-width: 500px;
+            height: 707px;
+            cursor: pointer;
+            overflow: hidden;
+        }
+
+        .page-wrapper {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: transform 0.3s ease;
+        }
+
+        .page {
+            max-width: 100%;
+            max-height: 100%;
+            background: #fff;
+            border: 2px solid #333;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            transition: transform 0.3s ease;
+            aspect-ratio: 210 / 297;
+        }
+
+        .page img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            display: block;
+        }
+
+        .page.zoomed {
+            transform: scale(2);
+            cursor: move;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 30px;
+        }
+
+        button {
+            background: transparent;
+            border: none;
+            padding: 15px;
+            font-size: 40px;
+            cursor: pointer;
+            transition: all 0.3s;
+            color: #fff;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 60px;
+            height: 60px;
+        }
+
+        button:hover {
+            transform: scale(1.2);
+            opacity: 0.8;
+        }
+
+        button:disabled {
+            opacity: 0.2;
+            cursor: not-allowed;
+        }
+        
+        button:disabled:hover {
+            transform: scale(1);
+        }
+
+        .page-counter {
+            color: #fff;
+            text-align: center;
+            margin-top: 20px;
+            font-size: 18px;
+        }
+
+        .zoom-info {
+            color: #fff;
+            text-align: center;
+            margin-top: 10px;
+            font-size: 14px;
+            opacity: 0.7;
+        }
+
+        @media (max-width: 768px) {
+            .book {
+                height: 565px;
+            }
+            
+            button {
+                font-size: 35px;
+                width: 50px;
+                height: 50px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .book {
+                height: 424px;
+            }
+            
+            .controls {
+                gap: 30px;
+            }
+            
+            button {
+                font-size: 30px;
+                width: 45px;
+                height: 45px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="loading" id="loading">
+            Chargement du portfolio...
+        </div>
+
+        <div class="book-container" id="book-container" style="display: none;">
+            <div class="book" id="book">
+                <div class="page-wrapper" id="page-wrapper">
+                    <div class="page" id="current-page">
+                        <!-- L'image sera insérée ici -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls" id="controls" style="display: none;">
+            <button id="prev-btn" onclick="prevPage()">←</button>
+            <button id="next-btn" onclick="nextPage()">→</button>
+        </div>
+
+        <div class="page-counter" id="page-counter" style="display: none;">
+            Page <span id="current-page-num">0</span> / <span id="total-pages">0</span>
+        </div>
+        
+        <div class="zoom-info" id="zoom-info" style="display: none;">
+            Double-cliquez sur la page pour zoomer • Cliquez pour changer de page
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        let currentPage = 0;
+        let pages = [];
+        let pdfDoc = null;
+        let isZoomed = false;
+        let isDragging = false;
+        let startX, startY, scrollLeft, scrollTop;
+
+        const pageElement = document.getElementById('current-page');
+        const pageWrapper = document.getElementById('page-wrapper');
+        const bookContainer = document.getElementById('book');
+
+        // Charger automatiquement le PDF
+        window.addEventListener('load', async () => {
+            try {
+                // IMPORTANT: Remplacez 'portfolio.pdf' par le nom exact de votre fichier PDF
+                const response = await fetch('portfolio.pdf');
+                const arrayBuffer = await response.arrayBuffer();
+                const typedarray = new Uint8Array(arrayBuffer);
+                await loadPDF(typedarray);
+                
+                // Afficher le portfolio
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('book-container').style.display = 'flex';
+                document.getElementById('controls').style.display = 'flex';
+                document.getElementById('page-counter').style.display = 'block';
+                document.getElementById('zoom-info').style.display = 'block';
+            } catch (error) {
+                document.getElementById('loading').innerHTML = 'Erreur de chargement du PDF.<br>Vérifiez que le fichier "portfolio.pdf" est bien présent.';
+                console.error(error);
+            }
+        });
+
+        async function loadPDF(data) {
+            try {
+                pdfDoc = await pdfjsLib.getDocument(data).promise;
+                const numPages = pdfDoc.numPages;
+                
+                pages = [];
+
+                for (let i = 1; i <= numPages; i++) {
+                    const page = await pdfDoc.getPage(i);
+                    const viewport = page.getViewport({ scale: 2 });
+                    
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+
+                    await page.render({
+                        canvasContext: context,
+                        viewport: viewport
+                    }).promise;
+
+                    pages.push(canvas.toDataURL());
+                }
+
+                currentPage = 0;
+                renderPage();
+                updatePageCounter();
+                updateButtons();
+            } catch (error) {
+                throw error;
+            }
+        }
+
+        function renderPage() {
+            if (pages.length === 0) return;
+
+            const img = document.createElement('img');
+            img.src = pages[currentPage];
+            
+            pageElement.innerHTML = '';
+            pageElement.appendChild(img);
+            
+            isZoomed = false;
+            pageElement.classList.remove('zoomed');
+            pageWrapper.style.transform = 'translate(0, 0)';
+        }
+
+        function nextPage() {
+            if (currentPage < pages.length - 1) {
+                currentPage++;
+                renderPage();
+                updatePageCounter();
+                updateButtons();
+            }
+        }
+
+        function prevPage() {
+            if (currentPage > 0) {
+                currentPage--;
+                renderPage();
+                updatePageCounter();
+                updateButtons();
+            }
+        }
+
+        function updatePageCounter() {
+            document.getElementById('current-page-num').textContent = currentPage + 1;
+            document.getElementById('total-pages').textContent = pages.length;
+        }
+
+        function updateButtons() {
+            document.getElementById('prev-btn').disabled = currentPage === 0;
+            document.getElementById('next-btn').disabled = currentPage >= pages.length - 1;
+        }
+
+        // Clic simple pour changer de page
+        bookContainer.addEventListener('click', (e) => {
+            if (isZoomed || isDragging) return;
+            
+            const rect = bookContainer.getBoundingClientRect();
+            const y = e.clientY - rect.top;
+            
+            if (y < rect.height / 2) {
+                prevPage();
+            } else {
+                nextPage();
+            }
+        });
+
+        // Double-clic pour zoomer
+        bookContainer.addEventListener('dblclick', (e) => {
+            e.preventDefault();
+            toggleZoom();
+        });
+
+        function toggleZoom() {
+            isZoomed = !isZoomed;
+            if (isZoomed) {
+                pageElement.classList.add('zoomed');
+                bookContainer.style.cursor = 'move';
+            } else {
+                pageElement.classList.remove('zoomed');
+                bookContainer.style.cursor = 'pointer';
+                pageWrapper.style.transform = 'translate(0, 0)';
+            }
+        }
+
+        // Déplacement en mode zoom
+        pageWrapper.addEventListener('mousedown', (e) => {
+            if (!isZoomed) return;
+            isDragging = true;
+            startX = e.pageX - pageWrapper.offsetLeft;
+            startY = e.pageY - pageWrapper.offsetTop;
+            const transform = pageWrapper.style.transform;
+            const matches = transform.match(/translate\((.+?)px,\s*(.+?)px\)/);
+            if (matches) {
+                scrollLeft = parseFloat(matches[1]);
+                scrollTop = parseFloat(matches[2]);
+            } else {
+                scrollLeft = 0;
+                scrollTop = 0;
+            }
+        });
+
+        pageWrapper.addEventListener('mouseup', () => {
+            isDragging = false;
+        });
+
+        pageWrapper.addEventListener('mouseleave', () => {
+            isDragging = false;
+        });
+
+        pageWrapper.addEventListener('mousemove', (e) => {
+            if (!isDragging || !isZoomed) return;
+            e.preventDefault();
+            const x = e.pageX - pageWrapper.offsetLeft;
+            const y = e.pageY - pageWrapper.offsetTop;
+            const walkX = (x - startX);
+            const walkY = (y - startY);
+            pageWrapper.style.transform = `translate(${scrollLeft + walkX}px, ${scrollTop + walkY}px)`;
+        });
+
+        // Support tactile pour zoom
+        let touchTimeout;
+        bookContainer.addEventListener('touchstart', (e) => {
+            touchTimeout = setTimeout(() => {
+                toggleZoom();
+            }, 500);
+        });
+
+        bookContainer.addEventListener('touchend', () => {
+            clearTimeout(touchTimeout);
+        });
+
+        bookContainer.addEventListener('touchmove', () => {
+            clearTimeout(touchTimeout);
+        });
+
+        // Support clavier
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                prevPage();
+            } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                nextPage();
+            } else if (e.key === 'Escape' && isZoomed) {
+                toggleZoom();
+            }
+        });
+
+        // Support swipe mobile (vertical pour portrait)
+        let touchStartY = 0;
+        let touchEndY = 0;
+
+        bookContainer.addEventListener('touchstart', (e) => {
+            if (isZoomed) return;
+            touchStartY = e.changedTouches[0].screenY;
+        });
+
+        bookContainer.addEventListener('touchend', (e) => {
+            if (isZoomed) return;
+            touchEndY = e.changedTouches[0].screenY;
+            handleSwipe();
+        });
+
+        function handleSwipe() {
+            if (touchEndY < touchStartY - 50) nextPage();
+            if (touchEndY > touchStartY + 50) prevPage();
+        }
+    </script>
+</body>
+</html>
